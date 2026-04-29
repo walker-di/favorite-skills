@@ -61,9 +61,9 @@ Do **not** use `conductor` for small, obvious edits, single-file fixes, quick fa
 
 - You remain the conductor and final accountable agent.
 - Before using the `subagent` tool, call `subagent({ action: "list" })` and choose only executable, non-disabled agents.
-- Prefer the `subagent` tool for orchestration. Use `tmux-coding-agent` only when a task-specific skill explicitly requires it.
-- Do not use `agent-start` for conductor workflows.
-- Do not create side-agent worktrees unless the user explicitly requested isolated implementation branches or the selected workflow requires safe parallel code edits.
+- Use the `subagent` tool for orchestration.
+- Standard execution patterns are single, parallel, and chain subagent calls.
+- Do not create subagent worktrees unless the user explicitly requested isolated implementation branches or the selected workflow requires safe parallel code edits.
 - If the task is planning/research/review only, worker prompts must say: `Do not implement, edit, write, or delete files.`
 - If implementation is authorized, minimize concurrent edits to overlapping files; prefer one implementer and separate reviewers unless using isolated worktrees.
 - Always synthesize into one final answer or one canonical artifact. Do not leave the user with multiple disconnected reports.
@@ -230,6 +230,10 @@ Prefer parallel mode for independent workers and chain mode for dependent workfl
 Examples:
 
 ```text
+subagent({ agent: "<agent>", task: "<prompt>" })
+```
+
+```text
 subagent({
   tasks: [
     { agent: "<agent-a>", task: "<prompt>", output: "<optional-report-a.md>" },
@@ -248,6 +252,12 @@ subagent({
     { agent: "<verifier>", task: "Review this plan/result: {previous}\n\n<prompt>" }
   ]
 })
+```
+
+```text
+subagent({ action: "status", id: "..." })
+subagent({ action: "interrupt", id: "..." })
+subagent({ action: "doctor" })
 ```
 
 ### 7. Validate and synthesize
@@ -362,6 +372,3 @@ Before finalizing, verify:
 - Randomized worker-pool training suggests orchestration should adapt to available agents and constraints rather than depending on one fixed best model.
 - Recursive conductor calls provide test-time scaling, but in this pi skill recursion must be bounded and targeted to avoid runaway delegation.
 
-## Original Ref and Paper ( use to improve/evolve ):
-- https://sakana.ai/fugu-beta/
-- https://arxiv.org/abs/2512.04388

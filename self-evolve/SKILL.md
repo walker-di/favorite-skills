@@ -1,6 +1,6 @@
 ---
 name: self-evolve
-description: Run Hermes /evolve on a local instruction artifact such as SKILL.md, AGENTS.md, SYSTEM.md, APPEND_SYSTEM.md, or a pi prompt file, usually via side agent but directly for side-agent lifecycle fixes. Use when the user wants to improve, tune, or evolve an instruction artifact without editing it in place.
+description: Run Hermes /evolve on a local instruction artifact such as SKILL.md, AGENTS.md, SYSTEM.md, APPEND_SYSTEM.md, or a pi prompt file, usually via delegated subagent but directly for lifecycle/orchestration fixes. Use when the user wants to improve, tune, or evolve an instruction artifact without editing it in place.
 ---
 
 # Self Evolve
@@ -10,7 +10,7 @@ Use this skill when the user wants to improve an instruction artifact and review
 ## What this skill does
 
 - Resolves the target artifact path
-- Runs the evolve workflow, directly or in one controlled side agent
+- Runs the evolve workflow, directly or in one controlled delegated subagent
 - Uses `self_evolve_artifact` for actual generation
 - Reports generated report/candidate paths
 - Does not apply changes unless explicitly authorized
@@ -45,24 +45,64 @@ If the user says "my AGENTS" or "system prompt", resolve these first:
 
 ## Recursion guard
 
-Before considering `agent-start`, check whether you are already in a side-agent context:
+Before delegating, check whether you are already in a nested delegated context:
 
-- current path or an ancestor looks like `.pi-agent-worktree-*`
-- an `active.lock` exists in the current side-agent/worktree state
-- the request is about stuck side agents, stale worktrees, child lifecycle, agent orchestration, active locks, orphan worktrees, or this skill itself
+- current path or an ancestor matches `pi-worktree-*` (current pi-subagents worktree semantics, including temp/current path aliases that resolve under such ancestors)
+- the request is about stuck delegated runs, stale worktrees, child lifecycle, orchestration, orphan worktrees, or this skill itself
+- **Legacy side-agent cleanup guards:** current path or an ancestor matches `.pi-agent-worktree-*`, or an `active.lock` exists in legacy side-context state
 
-If any guard is true, do **not** start another side agent and do **not** call `/evolve`. Run `self_evolve_artifact` directly in the current session. This prevents nested agent chains and orphaned worktrees.
+If any guard is true, do **not** spawn another delegation layer and do **not** call `/evolve`. Run `self_evolve_artifact` directly in the current session. This prevents nested chains and orphaned worktrees across current pi-subagents and legacy side-agent contexts.
+
+## Model selection
+
+The `cursor` provider is **not supported** by litellm - always pass an explicit `model` parameter.
+
+Preferred models for `self_evolve_artifact` (in order):
+
+1. `anthropic/claude-sonnet-4-20250514` - fast, reliable, good for most artifacts
+2. `openai/gpt-4o` - alternative if Anthropic quota is exhausted
+3. `google/gemini-2.5-pro` - alternative for very large artifacts
+
+Never omit the `model` parameter - the default will resolve to the cursor provider and fail.
+
+## Subagent semantics reference
+
+Before executing any delegated run, call:
+
+```text
+subagent({ action: "list" })
+```
+
+Standard patterns:
+
+```text
+subagent({ agent: "worker", task: "Run self_evolve_artifact for <TARGET_PATH> with explicit model" })
+```
+
+```text
+subagent({ tasks: [{ agent: "worker", task: "..." }], concurrency: 1, worktree: false })
+```
+
+```text
+subagent({ chain: [{ agent: "worker", task: "..." }] })
+```
+
+```text
+subagent({ action: "status", id: "..." })
+subagent({ action: "interrupt", id: "..." })
+subagent({ action: "doctor" })
+```
 
 ## Execution checklist
 
 1. Confirm the exact target path.
 2. Apply the recursion guard above.
-3. If guarded, run `self_evolve_artifact` directly.
-4. If not guarded, you may use `agent-start` for the normal background workflow.
+3. If guarded, run `self_evolve_artifact` directly with an explicit model.
+4. If not guarded, you may delegate one worker run through `subagent`.
 5. Preserve the original file unless the user explicitly asks to apply a candidate.
 6. Finish by reporting generated files and whether the original changed.
 
-## Side-agent task template
+## Delegated task template
 
 Use this only when the recursion guard is false.
 
@@ -70,25 +110,21 @@ Use this only when the recursion guard is false.
 Run the evolve workflow for this artifact: <TARGET_PATH>
 
 Requirements:
-- Call self_evolve_artifact directly for <TARGET_PATH>.
+- Call self_evolve_artifact directly for <TARGET_PATH> with an explicit model.
 - Do not call /evolve.
-- Do not call agent-start or spawn any further side agents.
+- Do not spawn additional delegated layers.
 - Do not modify the original file in place.
 - Return the report path, best candidate path, and a short summary of what improved.
 - If the target path is invalid or ambiguous, stop and ask for clarification.
-- If the run is complete and you need termination, request /quit.
 ```
 
-## Parent behavior for child agents
+## Parent behavior for delegated runs
 
-Prefer `agent-start` only for unguarded normal requests, and manage the child actively:
-
-- Use `agent-wait-any` only as a bounded wait for new output.
-- Use `agent-check` and backlog/status inspection to distinguish done, waiting for input, still running, stuck, or needing `/quit`.
-- If the child says it is done, provides final paths, or asks for `/quit`, send `/quit` promptly.
-- After sending `/quit`, do not call `agent-wait-any` for that child again until status confirms termination or a waiting/stuck state.
-- If the child yields twice without useful new output, stop waiting blindly; inspect status and either finalize, relay a question, send `/quit`, or report that the child appears stuck.
-- Never leave the parent blocked indefinitely in `agent-wait-any`.
+- Use one delegated run only when needed.
+- For async runs, use `subagent({ action: "status", id: "..." })` as bounded monitoring.
+- If the delegated run yields no useful progress, inspect with `subagent({ action: "doctor" })` and either refine prompt scope or interrupt.
+- If termination is required, use `subagent({ action: "interrupt", id: "..." })`.
+- Never wait indefinitely without status inspection.
 
 ## Output expectations
 
@@ -99,14 +135,14 @@ Always tell the user:
 - candidate/best output path if provided
 - whether anything was generated only
 - whether the original artifact was modified
-- if a child was used, whether it completed, requested input, was quit, or appeared stuck
+- if delegation was used, whether it completed, requested input, was interrupted, or appeared stuck
 
 Generated files are typically under `.pi/hermes-self-evolution/` or the path reported by the child/tool. Recommend review before apply.
 
 ## Examples
 
-- “Evolve `~/.pi/agent/skills/self-evolve/SKILL.md`.”
-- “Improve my global `AGENTS.md`.”
-- “Tune the prompt at `~/.pi/agent/prompts/review.md`.”
-- “Run self-evolve on the `backend-implementation` skill.”
-- “If already in `.pi-agent-worktree-0003`, run `self_evolve_artifact` directly instead of `/evolve`.”
+- "Evolve `~/.pi/agent/skills/self-evolve/SKILL.md`."
+- "Improve my global `AGENTS.md`."
+- "Tune the prompt at `~/.pi/agent/prompts/review.md`."
+- "Run self-evolve on the `backend-implementation` skill."
+- “If already in `pi-worktree-0003` (or legacy `.pi-agent-worktree-0003` during cleanup), run `self_evolve_artifact` directly instead of `/evolve`."

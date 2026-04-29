@@ -58,6 +58,11 @@ If the wiki is not bootstrapped, skip wiki dispatch and note it in the summary.
    - For instruction fixes, invoke the **self-evolve** skill on the specific file. Do not call `self_evolve_artifact` directly here — defer to that skill so candidates are reviewed.
    - For wiki entries, prefer `wiki_ensure_page` over creating files by hand, and finish with `wiki_log_event` (`kind: integrate` or `query`).
    - For ledger entries, match the existing schema (`describe_ledger` if unsure).
+
+   **⚠️ self-evolve dispatch: model & verification**
+   - **Always** pass an explicit `model` parameter — the `cursor/` provider prefix is not supported by litellm and will silently fail. Preferred models (in order): `anthropic/claude-sonnet-4-20250514`, `openai/gpt-4o`, `google/gemini-2.5-pro`.
+   - **Always** verify success by listing `.pi/hermes-self-evolution/runs/` for actual output files — the tool may report "Evolution complete" even when the underlying model call errored out.
+   - If no new run directory appeared, the evolution failed. Retry with an explicit model before moving on.
 5. **Summarize** to the user:
    - Lessons captured (one line each)
    - Where each landed (path / ledger / wiki page)
