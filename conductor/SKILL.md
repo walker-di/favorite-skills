@@ -267,6 +267,7 @@ After receiving reports:
 - Identify consensus, contradictions, missing evidence, and unsupported claims.
 - Resolve contradictions yourself by reading files/running commands when necessary.
 - For code-impacting tasks, run the smallest meaningful validation commands yourself unless a worker already did and the result is trustworthy.
+- **For UI work**: Test the visible outcome in a browser, capture before/after screenshots, verify responsive behavior across screen sizes, and confirm interactive elements work as intended. If browser validation was not performed, explicitly disclose this limitation.
 - Produce one coherent final answer, artifact, or patch summary.
 
 ## Suggested worker roles
@@ -360,6 +361,7 @@ Before finalizing, verify:
 - [ ] Implementation workers, if any, stayed in scope.
 - [ ] Contradictions between workers were resolved.
 - [ ] Claims are grounded in files, command output, or cited sources.
+- [ ] For UI changes: Browser testing was performed with screenshots, or limitation was explicitly disclosed.
 - [ ] One unified final answer/artifact was produced.
 - [ ] Delegation and validation are disclosed to the user.
 
@@ -371,4 +373,3 @@ Before finalizing, verify:
 - Effective strategies include independent attempts, planner/solver/verifier chains, final debate/checking rounds, and difficulty-adaptive step counts.
 - Randomized worker-pool training suggests orchestration should adapt to available agents and constraints rather than depending on one fixed best model.
 - Recursive conductor calls provide test-time scaling, but in this pi skill recursion must be bounded and targeted to avoid runaway delegation.
-

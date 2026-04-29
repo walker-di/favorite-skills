@@ -9,7 +9,7 @@ Task:
 $ARGUMENTS
 
 Primary objective:
-Deliver the requested UI behavior with the smallest correct change set while preserving or improving architectural boundaries.
+Deliver the requested UI behavior with the smallest correct change set while preserving or improving architectural boundaries. For generation workflows (charts, forms, PDFs, visualizations), visual browser validation is mandatory to confirm user-visible outcomes.
 
 Repository monorepo context:
 1. This repository is a Bun workspace monorepo with:
@@ -114,21 +114,6 @@ Layer model for frontend:
   - analytics adapters
   - framework wiring
 
-Naming and file rules:
-- Prefer paired naming for interactive components:
-  - `Card.svelte` + `Card.svelte.ts`
-  - `Modal.svelte` + `Modal.svelte.ts`
-  - `BoardColumn.svelte` + `BoardColumn.svelte.ts`
-- Keep model files close to the visual file they support unless the repository has a clear shared-model convention.
-- If logic is shared across multiple components, extract a shared model helper in a dedicated `.svelte.ts` module or move application/domain logic into plain `.ts` modules as appropriate.
-- Do not move domain/application logic into `.svelte.ts` just because the UI uses it.
-
-Svelte 5 rules:
-1. Prefer runes-based reactive logic in `.svelte.ts` for component model state.
-2. Do not introduce stores merely to extract logic when a `.svelte.ts` model is sufficient.
-3. Use stores only when they are genuinely the right abstraction for shared async streams or explicit subscription behavior.
-4. Keep component models small, explicit, and named after the UI concept they serve.
-
 Svelte 5 syntax contract (default for all new or touched code):
 1. Props:
    - In runes-mode components, declare props with `$props()` destructuring.
@@ -154,30 +139,6 @@ Svelte 5 syntax contract (default for all new or touched code):
    - Avoid adding normal props named `children` when inline content is used.
    - Do not mix new snippets and legacy slots in the same API design unless migration constraints require it.
 
-Svelte 5 quick replacement guide:
-- `export let foo` -> `let { foo }: Props = $props()`
-- `export let foo = 1` -> `let { foo = 1 }: Props = $props()`
-- `$: doubled = count * 2` -> `let doubled = $derived(count * 2)`
-- `$: { sideEffect(); }` -> `$effect(() => { sideEffect(); })`
-- `on:click={handleClick}` -> `onclick={handleClick}`
-- `createEventDispatcher` component events -> callback props (for example `onSave?: (value: SaveInput) => void`)
-- `<slot />` composition -> snippet props and `{@render ...}` (for example `let { children } = $props();` + `{@render children?.()}`)
-
-Legacy interop rule:
-1. If a file is intentionally legacy and migration is out of scope, keep local syntax consistency and avoid mixed partial rewrites that increase risk.
-2. If touching a syntax-heavy area (props/reactivity/events), migrate the touched section to Svelte 5 runes syntax in the same change when safe.
-3. If touching component composition, prefer snippet-based APIs over introducing new slots.
-4. Do not perform broad migration churn unless requested. Prefer minimal, behavior-preserving modernization.
-5. When preserving legacy syntax temporarily, add a concise follow-up note in the handoff summary describing why migration was deferred.
-
-Svelte 5 best-practices guardrails:
-1. Prefer `$derived` over `$effect` when computing values; reserve `$effect` for true side effects.
-2. Keep `$effect` blocks minimal, explicit, and cleanup-safe.
-3. Do not mutate props you do not own; communicate changes via callback props or explicit bindable contracts.
-4. Type component props and snippet props in TypeScript (`Props`, `Snippet` from `svelte`) for API clarity.
-5. Prefer callback props for component interaction over event-dispatch patterns in new runes-mode code.
-6. Avoid overusing two-way bindings; use one-way data flow and intent methods unless bidirectional sync is necessary.
-
 SvelteKit rules:
 1. Do not store user-specific or request-specific data in shared module-level server state.
 2. In `apps/desktop-app`, avoid per-route `+page.ts` for client-side composition unless the repository explicitly requires an exception.
@@ -187,34 +148,45 @@ SvelteKit rules:
 6. Do not let page/server transport details leak into domain or application modules.
 
 Implementation process:
-1. Inspect the relevant routes, pages, layouts, and components.
-2. Identify:
-   - the user-facing workflow
+1. **Inspect and map** - Identify:
+   - the user-facing workflow and generation requirements
    - the affected screen or component boundary
    - current coupling between view, model, application, and infrastructure
    - existing seams that can be preserved
-3. Build a change map with five buckets:
+
+2. **Categorize changes** into five buckets:
    - domain changes
    - application changes
    - presentation-model changes
    - view changes
    - adapter/infrastructure changes
-4. Decide whether the task is mainly:
-   - visual-only
-   - presentation-model
-   - application workflow
-   - domain rule
-   - integration/adaptor
-   - or cross-layer
-5. Implement from the inside out:
+
+3. **Implement from inside out**:
    a. Add or update domain rules if behavior changed.
    b. Add or update application use cases and ports.
    c. Add or update adapters for APIs, persistence, analytics, browser wrappers, or backend calls.
    d. Add or update the `.svelte.ts` model for the screen/component.
    e. Keep the `.svelte` file focused on rendering and event binding.
-6. Wire the page or component last.
-7. Add or update tests at the correct layer.
-8. Run the narrowest relevant validation first, then broader checks.
+
+4. **Wire the page or component** last.
+
+5. **Add tests at the correct layer**:
+   - Domain: unit tests for business rules
+   - Application: workflow tests with mocked ports
+   - Presentation model: state transitions and interaction behavior
+   - View: rendering, accessibility, and wiring tests
+
+6. **Visual validation checkpoint** (mandatory for generation workflows):
+   - For chart/visualization tools: Verify actual chart rendering, axis labels visibility, data point placement, legend display, responsive layout
+   - For form builders: Confirm drag visual feedback, drop zone highlighting, component placement in preview, form rendering accuracy
+   - For PDF/download features: Validate button state changes, loading spinners, success notifications, download prompts
+   - For any generation workflow: Tests must assert on rendered visual elements, not just data processing success
+
+7. **Run validation in order**:
+   - Unit tests first
+   - Integration tests
+   - Visual browser validation (required for generation features)
+   - Broader system checks
 
 Decision rules:
 - If logic answers "what must be true for the business?", it belongs in domain.
@@ -222,94 +194,62 @@ Decision rules:
 - If logic answers "how should this screen/component behave and react?", it belongs in `.svelte.ts`.
 - If logic answers "how is this rendered?", it belongs in `.svelte`.
 - If logic answers "how do we talk to fetch, browser APIs, storage, analytics, or external SDKs?", it belongs in adapters/infrastructure.
-- If logic needs to be reused by multiple screens and is not presentation-specific, move it out of `.svelte.ts` into application or domain modules.
-- If a value is merely display formatting, keep it near the presentation boundary.
-- If a component starts accumulating business decisions, extract them inward immediately.
-
-Thin view rules:
-- `.svelte` files must stay thin.
-- `.svelte` files should not become the place where feature behavior is invented.
-- Event handlers in `.svelte` should usually delegate to model methods rather than embed complex branching.
-- Inline async blocks and multi-step submit flows in `.svelte` are a smell.
-- Large computed expressions in markup are a smell.
-- Data normalization inside markup is a smell.
 
 Component model rules:
 - Prefer a clear model factory, class, or exported reactive state object in `.svelte.ts`.
-- Expose intent-based methods such as:
-  - `open()`
-  - `close()`
-  - `toggle()`
-  - `startEdit()`
-  - `save()`
-  - `archive()`
-  - `assignToAi()`
-- Prefer derived properties for display state rather than scattering condition logic through the markup.
+- Expose intent-based methods such as: `open()`, `close()`, `toggle()`, `startEdit()`, `save()`, `archive()`, `assignToAi()`
+- Prefer derived properties for display state rather than scattering condition logic through markup.
 - Keep DOM access out of the model unless it is truly UI-only and unavoidable.
-- Keep browser APIs behind narrow wrappers when they are not purely presentational.
-
-Page rules:
-- Pages and layouts are composition roots for frontend concerns.
-- Pages may create or assemble models but should not absorb domain/application logic.
-- In `apps/desktop-app`, prefer route-local composition helpers or `.svelte.ts` page models over per-route `+page.ts` files for client-loaded screens.
-- If route data is supplied from an allowed route file, transform it into view-ready state at the page boundary.
-- Avoid giant `+page.svelte` files. Extract stateful sections into paired component/model files.
 
 AI SDK Svelte rules:
 - Use `@ai-sdk/svelte` `Chat` class for streaming chat UIs, not React hooks.
 - Never destructure `Chat` properties (`let { messages } = chat` breaks reactivity). Always access via `chat.messages`, `chat.status`, etc.
 - Use reactive getters for `Chat` constructor arguments that may change: `new Chat({ get id() { return threadId; } })`.
-- The page model owns the `Chat` instance. The `+page.svelte` file renders from `model.chatMessages` and `model.chatStatus`.
-- Keep `DefaultChatTransport` pointed at the streaming API endpoint. Keep CRUD operations (list threads, list agents) in a separate `ChatTransport` adapter.
-- When switching threads, recreate the `Chat` instance with the new thread's streaming URL.
 
 Chat UI composition rules:
 - Chat UI components live in `packages/ui/src/lib/chat/` and are imported from `ui/source`.
-- `ChatComposer` follows the shadcn-svelte `notion-prompt-form` pattern (InputGroup + DropdownMenu + Tooltip).
-- `ChatComposer` requires `Tooltip.Provider` from `ui/source` as an ancestor in the component tree. Pages that include `ChatComposer` — even conditionally inside `{#if}` branches — must wrap content with `<Tooltip.Provider>`. A missing provider causes a context error that silently prevents the branch from rendering.
-- The `packages/ui` chat types in `src/lib/chat/types.ts` are structural mirrors of domain types. Do not import `domain/shared` from `packages/ui`; domain types satisfy UI types structurally at the app boundary.
-- The chat page model + composition helper pattern follows the same layout as other experiment routes (e.g. `experiments/todo`).
+- `ChatComposer` requires `Tooltip.Provider` from `ui/source` as an ancestor. Pages that include `ChatComposer` must wrap content with `<Tooltip.Provider>`.
+- The `packages/ui` chat types are structural mirrors of domain types. Do not import `domain/shared` from `packages/ui`.
 
-Lucide Svelte icon rule:
-- Prefer direct per-icon imports from `@lucide/svelte/icons/<icon-name>`.
-- Do not use named imports from `@lucide/svelte` as the default pattern in touched code.
-- Avoid `import * as icons from '@lucide/svelte'` in normal components because it weakens the bundle/build advantages of direct imports.
-- If a dynamic icon loader is truly required, keep it isolated, justify it in the change, and document the bundle-size/build-time tradeoff.
+Visual validation requirements for generation workflows:
+1. **Chart/visualization generation**:
+   - Tests must verify actual chart rendering in browser
+   - Assert axis labels are visible and correctly positioned
+   - Confirm data points appear at expected locations
+   - Validate legend displays correctly
+   - Check responsive layout behavior across screen sizes
+   - Data processing tests alone are insufficient
 
-Adapter rules:
-- API clients, local storage, analytics, and drag-drop/platform integrations belong in adapters.
-- Components and page models should depend on adapter abstractions or thin wrappers, not raw SDK usage everywhere.
-- Mapping from transport payloads to domain/application data should happen outside the view.
+2. **Form builder/drag-drop generation**:
+   - Verify drag visual feedback appears during interaction
+   - Confirm drop zone highlighting activates properly
+   - Assert component placement in preview matches expectations
+   - Validate form rendering accuracy in preview panel
+   - Tests must check actual visible drag states, not just data model changes
 
-Testing rules:
-- Test domain rules in plain unit tests.
-- Test application workflows with mocked or fake ports.
-- Test `.svelte.ts` presentation models for state transitions and interaction behavior.
-- Test `.svelte` components for rendering, accessibility, and wiring.
-- Add regression coverage for the changed scenario.
-- Do not over-test framework internals.
+3. **PDF/download generation**:
+   - Validate button state changes (enabled/disabled/loading)
+   - Confirm loading spinner appears during generation
+   - Assert success notifications display correctly
+   - Check download prompt appears for user
+   - Verify each visual feedback state, not just file generation success
 
-Refactoring rules:
-- Preserve user-visible behavior unless the task explicitly changes it.
-- When fixing legacy code, first extract model logic out of `.svelte` into `.svelte.ts`.
-- Then move non-presentation logic inward into application/domain modules if needed.
-- Improve one seam at a time.
-- Do not create generic `utils.ts` dumping grounds when a named domain, application, or presentation concept is available.
+4. **Any generation workflow**:
+   - Tests must assert on rendered visual elements
+   - Visual browser validation is mandatory
+   - Final reports must document verified visible behavior
+   - User-facing generation features require confirmation of actual visual outcomes
 
 Quality bar before finishing:
 1. Interactive components are split correctly between `.svelte` and `.svelte.ts`.
 2. `.svelte` files are primarily visual.
-3. `.svelte.ts` files contain presentation logic, not business policy.
-4. Domain/application code is free of Svelte and browser-specific leakage.
-5. No new request-specific server state is stored in shared module-level variables.
-6. No side effects were introduced into `load`.
-7. Backend/integration code is not scattered through component markup.
-8. Touched runes-mode components use Svelte 5 props syntax (`$props`) instead of introducing `export let`.
-9. Touched runes-mode components use modern event attributes (`onclick`, etc.) instead of introducing `on:`.
-10. Touched runes-mode components use `$state`/`$derived`/`$effect` instead of introducing top-level `$:` statements.
-11. Any legacy syntax intentionally left in place is documented briefly in the final handoff.
-12. Changed behavior is covered by tests at the correct layer.
-13. Naming matches the project's UI and domain language.
+3. Domain/application code is free of Svelte and browser-specific leakage.
+4. No side effects were introduced into `load`.
+5. Backend/integration code is not scattered through component markup.
+6. Touched runes-mode components use Svelte 5 syntax (props, events, reactivity).
+7. **Visual validation completed for generation workflows** - tests verify actual visible outcomes.
+8. Changed behavior is covered by tests at the correct layer.
+9. Any legacy syntax intentionally left in place is documented briefly.
 
 Output behavior:
 - Implement the change.
@@ -318,5 +258,6 @@ Output behavior:
   - which files are view files
   - which files are `.svelte.ts` presentation-model files
   - which files are application/domain/adapters
+  - visual validation results for generation workflows
   - any assumptions made
   - any architectural debt intentionally left in place

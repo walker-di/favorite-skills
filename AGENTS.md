@@ -58,6 +58,7 @@ Use intercom when: a subagent depends on output from another session, the user c
 | `frontend-worker` | Svelte 5 / SvelteKit UI implementation | Yes | Any UI feature, component, page, or frontend refactor |
 | `backend-worker` | Backend / domain / API implementation | Yes | Any service, repository, route, schema, or backend refactor |
 | `qa-worker` | Testing and validation | Yes | Writing tests, running validation, browser QA |
+| `designer` | Visual design and UX specialist | Design artifacts only | design sketches, UX critique, screenshot/sketch fidelity review, information hierarchy, navigation flow, accessibility, interaction clarity. |
 | `domain-reviewer` | Architecture and domain review | **No** | Reviewing changes for clean arch violations, i18n, billing correctness |
 | `scout` (builtin) | Fast codebase reconnaissance | No | When you need to understand code structure before planning |
 | `researcher` (builtin) | Web research | No | When you need current information about libraries, APIs, patterns |
@@ -83,10 +84,21 @@ Topology: parallel implementation → review → parent synthesis
 ### Frontend-only feature
 
 ```
-1. frontend-worker → implement
-2. domain-reviewer → review (if touches >3 files or crosses layers)
-3. qa-worker → tests + validation
-4. parent → final check
+1. designer (optional) → sketch UX direction
+2. frontend-worker → implement
+3. domain-reviewer → review (if touches >3 files or crosses layers)
+4. qa-worker → tests + validation
+5. parent → final check
+```
+
+### Design / UX task
+
+```
+1. designer → sketch/critique UX direction
+2. frontend-worker or backend-worker → implement scoped changes
+3. designer → screenshot/sketch fidelity review
+4. qa-worker → tests + validation (as needed)
+5. parent → final check
 ```
 
 ### Backend-only feature
