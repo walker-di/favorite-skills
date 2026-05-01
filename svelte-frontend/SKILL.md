@@ -39,6 +39,27 @@ Non-negotiable rules:
 8. Translate external data at the boundary using mappers, DTOs, or view-model transformers.
 9. Prefer incremental refactoring over sweeping rewrites.
 10. If the existing codebase already mixes layers, contain the leakage behind a boundary instead of spreading it further.
+11. **Environment variable validation**: When SvelteKit server-side features depend on env vars (API keys, provider URLs, auth tokens), the implementation must verify these vars actually reach `process.env` at runtime with clear error messages if missing. This is critical in Vite 7 Module Runner where `.env` file values may not reach `process.env`.
+12. **Error classification**: Transport layers must classify 502/503 errors from AI providers and external services as "service unavailable" rather than generic errors. Handle unexpected error shapes gracefully without crashing.
+
+Environment variable validation examples:
+```typescript
+// In server-side adapter
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('OPENAI_API_KEY not found in process.env - check .env configuration and Vite setup');
+}
+```
+
+Error classification examples:
+```typescript
+// In transport adapter
+catch (error) {
+  if (error.status === 502 || error.status === 503 || error.message?.includes('timeout')) {
+    throw new ServiceUnavailableError('AI provider temporarily unavailable');
+  }
+  // Handle other cases...
+}
+```
 
 Svelte separation rule:
 - A stateful or reusable interactive component should normally have a paired file:
@@ -247,9 +268,11 @@ Quality bar before finishing:
 4. No side effects were introduced into `load`.
 5. Backend/integration code is not scattered through component markup.
 6. Touched runes-mode components use Svelte 5 syntax (props, events, reactivity).
-7. **Visual validation completed for generation workflows** - tests verify actual visible outcomes.
-8. Changed behavior is covered by tests at the correct layer.
-9. Any legacy syntax intentionally left in place is documented briefly.
+7. **Environment variables validated** - Server-side features verify env vars reach `process.env` with clear error messages.
+8. **Error classification implemented** - Transport layers properly classify 502/503 as service unavailable.
+9. **Visual validation completed for generation workflows** - tests verify actual visible outcomes.
+10. Changed behavior is covered by tests at the correct layer.
+11. Any legacy syntax intentionally left in place is documented briefly.
 
 Output behavior:
 - Implement the change.
@@ -259,5 +282,7 @@ Output behavior:
   - which files are `.svelte.ts` presentation-model files
   - which files are application/domain/adapters
   - visual validation results for generation workflows
+  - environment variable validation implemented
+  - error classification patterns used
   - any assumptions made
   - any architectural debt intentionally left in place

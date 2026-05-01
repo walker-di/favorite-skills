@@ -1,16 +1,18 @@
 ---
 name: plan-implemention
-description: "Plan a feature implementation by delegating investigation to three no-worktree subagents: one for UI/frontend, one for backend, and one for tests. Use when the user asks to plan implementation before coding or explicitly invokes plan_implemention / plan-implemention."
+description: "Plan a feature implementation by delegating investigation to three no-edit-safe, no-worktree subagents: one for UI/frontend, one for backend, and one for tests. Use when the user asks to plan implementation before coding or explicitly invokes plan_implemention / plan-implemention."
 ---
 
 # plan_implemention
 
-Use this skill when the user wants an implementation plan before coding, especially when they explicitly say `plan_implemention`.
+Use this skill when the user explicitly requests an implementation plan before coding, especially when they say `plan_implemention`, "plan implementation", "create a plan", or "plan before implementing".
+
+**Do not use** for direct implementation requests, debugging, or when the user asks to "implement" or "build" without planning.
 
 The skill produces one unified, validated implementation plan by delegating planning to exactly three subagents:
 
 1. **UI/frontend planning subagent**
-2. **Backend planning subagent**
+2. **Backend planning subagent** 
 3. **Tests planning subagent**
 
 This is a planning workflow only. Do **not** implement code unless the user later asks for implementation.
@@ -21,51 +23,63 @@ This is a planning workflow only. Do **not** implement code unless the user late
   - `plan-ui-<topic>`
   - `plan-backend-<topic>`
   - `plan-tests-<topic>`
-- Before execution, call `subagent({ action: "list" })` and choose executable agents.
+- Before execution, call `subagent({ action: "list" })` and choose executable no-edit-safe agents.
+- Use no-edit-safe planning agents by default: `delegate` for role-specific planning or `planner` where appropriate.
+- Avoid implementation-specialist agents (`frontend-worker`, `backend-worker`, `qa-worker`) unless their harness explicitly supports no-edit planning mode.
+- Prefer `cursor/gpt-5.3-codex` for planning subtasks to reduce latency.
+- If planning quality is insufficient, escalate to `cursor/gpt-5.5`.
+- If a subagent fails with quota/usage-limit (`usage limit`, `team plan`, `insufficient_quota`, `429`), retry with fallback ladder:
+  1. `cursor/gpt-5.3-codex`
+  2. `cursor/gpt-5.5` 
+  3. `openai/gpt-4o`
 - Do **not** use worktrees for this workflow.
-- Run all subagents in the current repo/folder context.
+- Run all subagents in current repo/folder context.
 - Subagents must investigate and plan only; they must not edit files.
 - Parent session must receive all three reports, then unify and validate them.
 - Create or update **one** plan artifact in the repo, not multiple plan files.
 - Include a checklist with tasks grouped by UI/frontend, backend, tests, validation, risks, and dependencies.
-- Mark planning tasks as complete only after their corresponding subagent report has been received and incorporated.
-- If requirements are ambiguous, ask concise clarifying questions before spawning subagents. If the user asks to proceed anyway, document assumptions.
+
+## Output handling and recovery
+
+**Critical**: When a subagent returns a report but harness flags "completed without making edits" or similar:
+
+1. **Read the output artifact** using the reported path or standard output location
+2. **Validate content** against the planning prompt requirements:
+   - Does it address the assigned planning scope?
+   - Does it include the required report sections?
+   - Is the content substantive and actionable?
+3. **If content is adequate**: Treat as successful planning report and incorporate into unified plan
+4. **If content is inadequate**: Retry with adjusted prompt or different no-edit-safe agent
+5. **Switch future subtasks** to confirmed no-edit-safe agents to prevent recurrence
+
+**Output modes**:
+- Use `output: false` for subagents that should return content directly without file creation
+- Use file output when creating persistent planning artifacts
+- Monitor both direct output and file artifacts for comprehensive content validation
 
 ## Delegation patterns
 
 Single subtask example:
-
 ```text
-subagent({ agent: "frontend-worker", task: "<focused planning prompt>" })
+subagent({ agent: "delegate", task: "<focused planning prompt>", model: "cursor/gpt-5.3-codex", output: false })
 ```
 
 Primary execution (parallel, no worktree):
-
 ```text
 subagent({
   tasks: [
-    { agent: "frontend-worker", task: "<ui planning prompt>" },
-    { agent: "backend-worker", task: "<backend planning prompt>" },
-    { agent: "qa-worker", task: "<tests planning prompt>" }
+    { agent: "delegate", task: "<ui planning prompt>", model: "cursor/gpt-5.3-codex", output: false },
+    { agent: "delegate", task: "<backend planning prompt>", model: "cursor/gpt-5.3-codex", output: false },
+    { agent: "delegate", task: "<tests planning prompt>", model: "cursor/gpt-5.3-codex", output: false }
   ],
   concurrency: 3,
   worktree: false
 })
 ```
 
-Optional dependent synthesis/review chain example:
+If `delegate` is unavailable, choose another confirmed no-edit-safe planning agent from `subagent({ action: "list" })`.
 
-```text
-subagent({
-  chain: [
-    { agent: "planner", task: "Synthesize these planning outputs into one checklist: {task}" },
-    { agent: "reviewer", task: "Review this plan for contradictions and missing validation: {previous}" }
-  ]
-})
-```
-
-Status/control examples for async runs:
-
+Status/control examples:
 ```text
 subagent({ action: "status", id: "..." })
 subagent({ action: "interrupt", id: "..." })
@@ -75,7 +89,6 @@ subagent({ action: "doctor" })
 ## Shared child constraints
 
 Every child prompt must include:
-
 ```text
 You are planning only. Do not implement, edit, write, or delete files.
 Work in the existing repo folder only. Do not create a worktree.
@@ -90,8 +103,7 @@ If you find uncertainty, record assumptions and risks instead of changing code.
 ```text
 You are the UI/frontend planning subagent for plan_implemention.
 
-Goal:
-<user goal>
+Goal: <user goal>
 
 Scope:
 - Plan Svelte/SvelteKit UI work only.
@@ -115,13 +127,13 @@ Report format:
 ```text
 You are the backend planning subagent for plan_implemention.
 
-Goal:
-<user goal>
+Goal: <user goal>
 
 Scope:
 - Plan backend/API/domain/infrastructure work only.
 - Identify routes, services, repositories, schemas, migrations, auth policy, environment variables, WebSocket/event needs, and clean architecture boundaries.
 - Follow domain rules: repositories handle persistence details, APIs use plain strings, services hold use cases, detailed error logging in catch blocks.
+- For migrations: include rollback strategies and dependency validation.
 - Check relevant README.md/docs and related examples.
 - Do not implement or edit files.
 
@@ -129,7 +141,7 @@ Report format:
 1. Backend problem framing
 2. Relevant backend/domain files and patterns
 3. API/service/repository plan
-4. Data model/migration/index plan, if applicable
+4. Data model/migration/index plan with rollback strategy, if applicable
 5. Auth, validation, error logging, and eventing plan
 6. Risks, assumptions, and dependencies on UI/tests
 7. Backend checklist items with file paths
@@ -140,8 +152,7 @@ Report format:
 ```text
 You are the tests planning subagent for plan_implemention.
 
-Goal:
-<user goal>
+Goal: <user goal>
 
 Scope:
 - Plan the smallest meaningful validation strategy for the change scope.
@@ -164,26 +175,19 @@ Report format:
 
 1. Parse the user goal and clarify if required.
 2. Create a short kebab-case `<topic>` for report labels.
-3. Call `subagent({ action: "list" })`.
-4. Run the three role-specific planning subtasks in parallel via `subagent({ tasks: [...], concurrency: 3, worktree: false })`.
-5. If async is used, monitor with `subagent({ action: "status", id: "..." })`.
-6. Validate each report against:
-   - user requirements
-   - project instructions
-   - clean architecture boundaries
-   - Svelte 5/frontend architecture rules
-   - API/auth/cache policies, where relevant
-   - test command requirements
+3. Call `subagent({ action: "list" })` and select confirmed no-edit-safe planning agents.
+4. Run three role-specific planning subtasks in parallel with `subagent({ tasks: [...], concurrency: 3, worktree: false })`.
+5. For each subagent result:
+   - If harness flags "completed without making edits", read output artifact and validate content
+   - If content meets planning requirements, treat as successful report
+   - If content is inadequate, retry with different agent or adjusted prompt
+6. Validate each report against user requirements, project instructions, and architecture boundaries.
 7. Resolve contradictions between reports in the parent session.
 8. Produce one unified implementation plan.
-9. Save it as a single plan file when appropriate, preferably:
-   - `.pi/plans/<topic>-implementation-plan.md`
-   - or an existing task-specific plan file if the repo already has one for the work
-10. Report the plan path and a concise summary to the user.
+9. Save as single plan file: `.pi/plans/<topic>-implementation-plan.md` or existing task-specific plan file.
+10. Report the plan path and concise summary to the user.
 
 ## Unified plan artifact format
-
-Use this structure:
 
 ```markdown
 # <Feature/Task> Implementation Plan
@@ -194,9 +198,9 @@ Use this structure:
 - Non-goals: ...
 
 ## Source Reports
--[x] ✅ UI/frontend planning report incorporated: `plan-ui-<topic>`
--[x] ✅ Backend planning report incorporated: `plan-backend-<topic>`
--[x] ✅ Tests planning report incorporated: `plan-tests-<topic>`
+- [x] ✅ UI/frontend planning report incorporated: `plan-ui-<topic>`
+- [x] ✅ Backend planning report incorporated: `plan-backend-<topic>`
+- [x] ✅ Tests planning report incorporated: `plan-tests-<topic>`
 
 ## Architecture Validation
 - ✅ Clean architecture boundaries: ...
@@ -208,17 +212,17 @@ Use this structure:
 ## Implementation Checklist
 
 ### UI/frontend
--[ ] ...
+- [ ] ...
 
-### Backend
--[ ] ...
+### Backend  
+- [ ] ...
 
 ### Tests
--[ ] ...
+- [ ] ...
 
 ### Validation
--[ ] Run ...
--[ ] Browser verify ...
+- [ ] Run ...
+- [ ] Browser verify ...
 
 ## Dependencies and Sequencing
 1. ...
@@ -253,7 +257,9 @@ Say "implement this plan" when you want me to start executing the checklist.
 
 ## Notes
 
-- Keep the final response concise.
+- Keep final response concise.
 - Do not claim implementation occurred.
-- If a subagent fails, retry once with a narrower prompt. If it fails again, report the failure and either ask the user how to proceed or complete only the missing section in the parent with the failure clearly disclosed.
-- Prefer concrete file paths over vague tasks.
+- For quota-limited failures, retry with model fallback ladder before changing prompt scope.
+- For non-quota failures, retry once with narrower prompt. If it fails again, complete missing section in parent with failure disclosed.
+- Always validate artifact content when harness indicates "no edits" to distinguish successful planning from failed implementation.
+- Prefer concrete file paths over vague tasks in checklists.

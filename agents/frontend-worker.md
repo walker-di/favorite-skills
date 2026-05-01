@@ -1,7 +1,7 @@
 ---
 name: frontend-worker
 description: Svelte 5 / SvelteKit frontend specialist. Implements UI features following clean architecture with .svelte/.svelte.ts separation, runes syntax, and project monorepo conventions.
-tools: Read, Grep, Glob, Shell, StrReplace, Write
+tools: read, grep, find, ls, bash, edit, write
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: false

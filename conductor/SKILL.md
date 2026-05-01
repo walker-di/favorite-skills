@@ -12,7 +12,7 @@ This skill adapts ideas from Sakana AI's Fugu beta and the Conductor paper:
 - Sakana Fugu: https://sakana.ai/fugu-beta/
 - Nielsen et al., "Learning to Orchestrate Agents in Natural Language with the Conductor" (arXiv:2512.04388): https://arxiv.org/abs/2512.04388
 
-The core idea is to act as a **meta-agent**: dynamically divide the user's task, assign focused natural-language subtasks to appropriate workers, control what each worker can see from previous work, then synthesize and verify the final answer.
+The core idea is to act as a **meta-agent**: dynamically divide the user's task, assign focused natural-language subtasks to appropriate workers, control what each worker can see from previous work, then synthesize and verify the final answer with runtime proof.
 
 ## When to use
 
@@ -43,15 +43,16 @@ Do **not** use `conductor` for small, obvious edits, single-file fixes, quick fa
    - Use isolation for independent attempts.
    - Share prior outputs only when refinement, critique, synthesis, or verification benefits from them.
 
-4. **Difficulty-adaptive compute**
-   - Simple tasks get 1-2 calls.
-   - Moderate tasks get 2-4 specialists.
-   - Hard/high-stakes tasks may use parallel exploration plus verifier/synthesizer loops.
+4. **Difficulty-adaptive compute + model selection**
+   - Simple tasks get 1-2 calls and prefer fast models.
+   - Moderate tasks get 2-4 specialists on balanced models.
+   - Hard/high-stakes tasks may use stronger models plus verifier/synthesizer loops.
    - Cap the workflow before starting; do not spawn open-ended agents.
 
-5. **Verification before synthesis**
-   - Prefer at least one explicit verifier/critic for implementation plans, risky claims, architecture choices, migrations, security, or generated code.
-   - The parent session owns final judgment; do not blindly concatenate worker outputs.
+5. **Mandatory runtime verification**
+   - Every implementation workflow MUST end with a verification step that proves the feature works in the running application.
+   - Tests alone are insufficient; runtime evidence is required.
+   - The verification step must: (1) start or use the dev server, (2) exercise the implemented feature via curl/API call or browser automation, (3) capture concrete evidence (response body, screenshot, or log output).
 
 6. **Bounded recursion only**
    - If the first synthesized result reveals a major gap, run at most one additional recursive round unless the user authorizes more.
@@ -66,9 +67,13 @@ Do **not** use `conductor` for small, obvious edits, single-file fixes, quick fa
 - Do not create subagent worktrees unless the user explicitly requested isolated implementation branches or the selected workflow requires safe parallel code edits.
 - If the task is planning/research/review only, worker prompts must say: `Do not implement, edit, write, or delete files.`
 - If implementation is authorized, minimize concurrent edits to overlapping files; prefer one implementer and separate reviewers unless using isolated worktrees.
+- **MANDATORY RUNTIME VERIFICATION**: Every implementation workflow MUST include a final verification step that provides runtime proof the feature works. A workflow without this step is INCOMPLETE. Use qa-worker with use-browser skill for UI features, or shell commands for API endpoints.
+- Never synthesize 'done' without runtime evidence: actual browser interaction, API response capture, or log output proving the implemented feature works in the running application.
 - Always synthesize into one final answer or one canonical artifact. Do not leave the user with multiple disconnected reports.
 - Disclose delegation in the final response: which workers ran and what they contributed.
-- If a worker fails, retry once with a narrower prompt or handle the missing section yourself with the failure clearly disclosed.
+- If a worker fails, classify quota/usage-limit failures first; do not treat them as generic worker failures.
+- For quota-limited runs, retry with model fallback before prompt rewrites.
+- If retries still fail, handle the missing section yourself with the failure clearly disclosed.
 
 ## Workflow
 
@@ -80,11 +85,29 @@ Classify the task:
 
 - **Answer/research**: gather evidence, compare options, synthesize answer.
 - **Planning**: produce an implementation or migration plan only.
-- **Implementation**: edit code, then verify.
+- **Implementation**: edit code, then verify with runtime proof.
 - **Review/QA**: inspect artifacts and find defects.
 - **Creative/design**: generate concepts, variants, critique, converge.
 
 ### 2. Build the worker pool
+
+#### Model routing defaults (prefer cursor provider)
+
+Pick model by difficulty unless user overrides:
+
+- `simple`: `cursor/gpt-5.3-codex`
+- `moderate`: `cursor/gpt-5.3-codex`
+- `hard`: `cursor/gpt-5.5`
+
+Fallback ladder for quota/usage-limit failures (`usage limit`, `team plan`, `insufficient_quota`, `429`):
+1. `cursor/gpt-5.3-codex`
+2. `cursor/gpt-5.5`
+3. `openai/gpt-4o`
+
+Agent defaults:
+- `scout`, `planner`, `delegate`, `reviewer`: `cursor/gpt-5.3-codex`
+- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer`: `cursor/gpt-5.5`
+
 
 Call:
 
@@ -114,6 +137,7 @@ Use when the task needs one narrow expertise area plus parent synthesis.
 ```text
 Step 1: specialist investigates or implements
 Step 2: parent validates and responds
+Step 3: MANDATORY runtime verification (for implementation tasks)
 ```
 
 #### B. Parallel independent attempts
@@ -124,6 +148,7 @@ Use for research, debugging hypotheses, design alternatives, or high-uncertainty
 Step 1: workers A/B/C investigate independently with no cross-visibility
 Step 2: parent compares agreements/conflicts
 Step 3: optional verifier checks synthesis
+Step 4: MANDATORY runtime verification (for implementation tasks)
 ```
 
 #### C. Sequential chain
@@ -133,8 +158,9 @@ Use when later work depends on earlier output.
 ```text
 Step 1: investigator maps facts
 Step 2: planner uses investigator report
-Step 3: implementer or writer uses plan
+Step 3: implementer uses plan
 Step 4: verifier reviews result
+Step 5: MANDATORY runtime verification with evidence capture
 ```
 
 #### D. Tree topology
@@ -145,6 +171,7 @@ Use when independent branches feed a final integrator.
 Step 1: branch workers handle separate domains
 Step 2: integrator receives all branch reports
 Step 3: parent validates integrator output
+Step 4: MANDATORY runtime verification (for implementation tasks)
 ```
 
 #### E. Debate / critique / refinement
@@ -156,6 +183,7 @@ Step 1: proposer drafts solution
 Step 2: critic sees proposal and attacks assumptions
 Step 3: proposer or parent revises
 Step 4: verifier checks final answer
+Step 5: MANDATORY runtime verification (for implementation tasks)
 ```
 
 #### F. Bounded recursive correction
@@ -167,6 +195,7 @@ Step 1: initial workflow
 Step 2: parent identifies gap
 Step 3: one targeted recursive worker round on that gap
 Step 4: parent updates final synthesis
+Step 5: MANDATORY runtime verification with evidence
 ```
 
 ### 4. Write an explicit coordination spec
@@ -182,11 +211,13 @@ Use this shape in your notes/reasoning, and optionally in an artifact when usefu
 - Assumptions: <assumptions>
 - Max rounds: <N>
 - Edit policy: <no edits | parent edits only | one implementer edits | worktree isolation>
+- Verification method: <qa-worker browser | shell commands | API testing>
 
 | Step | Worker | Subtask | Access to prior work | Output |
 |---|---|---|---|---|
 | 1 | <agent> | <focused prompt> | none | <report/patch/etc> |
 | 2 | <agent> | <focused prompt> | step 1 | <critique/etc> |
+| N | qa-worker | Runtime verification | all | <evidence/screenshots> |
 ```
 
 Communication/access options:
@@ -230,14 +261,14 @@ Prefer parallel mode for independent workers and chain mode for dependent workfl
 Examples:
 
 ```text
-subagent({ agent: "<agent>", task: "<prompt>" })
+subagent({ agent: "<agent>", task: "<prompt>", model: "<selected-model>" })
 ```
 
 ```text
 subagent({
   tasks: [
-    { agent: "<agent-a>", task: "<prompt>", output: "<optional-report-a.md>" },
-    { agent: "<agent-b>", task: "<prompt>", output: "<optional-report-b.md>" }
+    { agent: "<agent-a>", task: "<prompt>", model: "<selected-model>", output: "<optional-report-a.md>" },
+    { agent: "<agent-b>", task: "<prompt>", model: "<selected-model>", output: "<optional-report-b.md>" }
   ],
   concurrency: 2,
   worktree: false
@@ -247,9 +278,10 @@ subagent({
 ```text
 subagent({
   chain: [
-    { agent: "<investigator>", task: "<prompt>" },
-    { agent: "<planner>", task: "Use this prior report: {previous}\n\n<prompt>" },
-    { agent: "<verifier>", task: "Review this plan/result: {previous}\n\n<prompt>" }
+    { agent: "<investigator>", task: "<prompt>", model: "<selected-model>" },
+    { agent: "<planner>", task: "Use this prior report: {previous}\n\n<prompt>", model: "<selected-model>" },
+    { agent: "<implementer>", task: "Use this plan: {previous}\n\n<prompt>", model: "<selected-model>" },
+    { agent: "qa-worker", task: "Verify implementation works: use-browser skill to test the feature and capture screenshots: {previous}\n\n<prompt>", model: "cursor/gpt-5.5" }
   ]
 })
 ```
@@ -267,7 +299,7 @@ After receiving reports:
 - Identify consensus, contradictions, missing evidence, and unsupported claims.
 - Resolve contradictions yourself by reading files/running commands when necessary.
 - For code-impacting tasks, run the smallest meaningful validation commands yourself unless a worker already did and the result is trustworthy.
-- **For UI work**: Test the visible outcome in a browser, capture before/after screenshots, verify responsive behavior across screen sizes, and confirm interactive elements work as intended. If browser validation was not performed, explicitly disclose this limitation.
+- **MANDATORY RUNTIME VERIFICATION**: For ANY implementation task, you MUST include a verification step that exercises the feature in the running application and captures evidence. This can be done by qa-worker using use-browser skill or by direct shell commands.
 - Produce one coherent final answer, artifact, or patch summary.
 
 ## Suggested worker roles
@@ -280,6 +312,7 @@ Choose only roles that the task needs:
 - **implementer**: performs scoped edits when authorized.
 - **critic**: attacks assumptions, edge cases, architecture violations, and hidden risks.
 - **verifier**: checks correctness through tests, commands, browser, or static inspection.
+- **runtime-verifier**: uses qa-worker or shell commands to prove the feature works in the running application.
 - **synthesizer**: merges reports into a single coherent artifact.
 
 ## Patterns to prefer
@@ -290,7 +323,8 @@ Choose only roles that the task needs:
 2. Planner: propose minimal change sequence.
 3. Implementer: make scoped edits.
 4. Verifier: run/read tests and inspect for regressions.
-5. Parent: final validation and summary.
+5. **MANDATORY Runtime Verifier**: use qa-worker with browser automation or shell commands to exercise the feature and capture evidence.
+6. Parent: final validation and summary.
 
 ### Broad implementation planning
 
@@ -299,7 +333,8 @@ If the task specifically asks for `plan_implemention`, use that skill instead. O
 1. Frontend/domain worker if UI is involved.
 2. Backend/domain worker if APIs/data are involved.
 3. Tests/validation worker.
-4. Parent: unified plan with sequencing, risks, and commands.
+4. **Runtime verification worker**: plan how to verify the implementation works in the running application.
+5. Parent: unified plan with sequencing, risks, and verification commands.
 
 ### Deep research / paper study
 
@@ -323,9 +358,13 @@ If the task specifically asks for `plan_implemention`, use that skill instead. O
 
 ### Workflow
 n. <worker/role> — <what it did>
+n+1. runtime-verifier — captured evidence proving feature works
 
 ### Synthesis
 - ...
+
+### Runtime Evidence
+- <screenshots, API responses, log output proving the feature works>
 
 ### Key Decisions
 - ...
@@ -361,7 +400,8 @@ Before finalizing, verify:
 - [ ] Implementation workers, if any, stayed in scope.
 - [ ] Contradictions between workers were resolved.
 - [ ] Claims are grounded in files, command output, or cited sources.
-- [ ] For UI changes: Browser testing was performed with screenshots, or limitation was explicitly disclosed.
+- [ ] **MANDATORY**: For implementation tasks, runtime verification was performed with concrete evidence (browser screenshots, API responses, or log output).
+- [ ] A workflow cannot be considered complete without runtime proof that the feature works in the running application.
 - [ ] One unified final answer/artifact was produced.
 - [ ] Delegation and validation are disclosed to the user.
 

@@ -1,7 +1,7 @@
 ---
 name: designer
 description: Visual design and UX specialist. Creates design sketches, critiques implemented UI against screenshots/sketches, evaluates information hierarchy, navigation flow, accessibility, and interaction clarity.
-tools: Read, Grep, Glob, Shell, Write
+tools: read, grep, find, ls, bash, write
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: false

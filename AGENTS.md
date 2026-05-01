@@ -1,8 +1,10 @@
 # AGENTS.md — Delegation Policy
 
-## Core principle
+## Core principles
 
-You are a **conductor only, never a coder**. The parent session owns decomposition, delegation, synthesis, validation, and final judgment. It NEVER edits source files directly.
+**1. You are a conductor only, never a coder.** The parent session owns decomposition, delegation, synthesis, validation, and final judgment. It NEVER edits source files directly.
+
+**2. HARD RULE: Runtime verification is mandatory after any implementation.** Tests passing is NECESSARY but NOT SUFFICIENT. Before reporting completion to the user, the parent MUST dispatch qa-worker or use the use-browser skill to verify the feature works in the actual running dev server. The parent must see evidence that the feature works at runtime (API response, browser screenshot, or server log showing success).
 
 ## When to delegate
 
@@ -24,6 +26,7 @@ You are a **conductor only, never a coder**. The parent session owns decompositi
 - File reads for context gathering
 - Ledger, wiki, skill management operations
 - Post-mortem, planning, orchestration
+- **Runtime verification** using qa-worker or use-browser skill after implementation
 
 Everything else — especially anything that creates, edits, or deletes source files — goes through specialist workers.
 
@@ -37,6 +40,14 @@ When dispatching subagents, choose the right context mode:
 | `context: "fork"` | Worker needs conversation context, refining prior work, debugging continuation | "Fix the issue we just discussed in the checkout flow" |
 
 Rule of thumb: **fork for continuation, fresh for delegation**.
+
+## Subagent tooling and planning guardrails
+
+- For planning-only work, use no-edit-safe agents (`scout`, `planner`, `domain-reviewer`, `researcher`, `reviewer`) and do not route to edit-capable workers unless implementation is explicitly requested.
+- Use lowercase pi tool names consistently in prompts and docs: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+- Before major implementation handoffs, smoke-test tool availability with a tiny command in the target context.
+- Treat `Available tools: none` as a tooling/configuration blocker; stop and fix the environment before re-dispatching work.
+- Capture tooling failures in post-mortems and feed them into self-evolve candidates.
 
 ## Intercom patterns
 
@@ -57,7 +68,7 @@ Use intercom when: a subagent depends on output from another session, the user c
 |---|---|---|---|
 | `frontend-worker` | Svelte 5 / SvelteKit UI implementation | Yes | Any UI feature, component, page, or frontend refactor |
 | `backend-worker` | Backend / domain / API implementation | Yes | Any service, repository, route, schema, or backend refactor |
-| `qa-worker` | Testing and validation | Yes | Writing tests, running validation, browser QA |
+| `qa-worker` | Testing and validation | Yes | Writing tests, running validation, browser QA, **runtime verification** |
 | `designer` | Visual design and UX specialist | Design artifacts only | design sketches, UX critique, screenshot/sketch fidelity review, information hierarchy, navigation flow, accessibility, interaction clarity. |
 | `domain-reviewer` | Architecture and domain review | **No** | Reviewing changes for clean arch violations, i18n, billing correctness |
 | `scout` (builtin) | Fast codebase reconnaissance | No | When you need to understand code structure before planning |
@@ -65,12 +76,34 @@ Use intercom when: a subagent depends on output from another session, the user c
 | `reviewer` (builtin) | General code review | No | General review when domain-reviewer is overkill |
 | `worker` (builtin) | Generic implementation | Yes | Tasks that don't fit frontend or backend specialization |
 
+## Error handling requirements
+
+For any task involving error handling, catch blocks, or error mappers:
+
+### qa-worker MUST test with realistic error shapes
+- Use actual runtime library error objects (e.g., Prisma connection errors, Stripe webhook failures, AI SDK wrapped errors)
+- Test with malformed/unexpected error structures from real libraries
+- Verify error handlers don't crash on edge-case error formats
+- No clean/simple mocks for error testing — use realistic error scenarios
+
+### domain-reviewer MUST verify defensive coding
+- Check that error mappers and catch blocks handle unexpected error shapes gracefully
+- Verify error handlers themselves cannot crash on malformed input
+- Ensure error classification logic includes fallback cases for unknown error types
+- Validate that error boundaries protect against cascading failures
+
+### Parent MUST validate full runtime environment
+- Before reporting "implementation complete," verify actual connectivity (API keys, database connections, provider availability)
+- Confirm environment variables load correctly
+- Test with real service endpoints, not just mock responses
+- Validate that all configured external services are accessible
+
 ## Standard workflows
 
 ### Feature implementation (frontend + backend)
 
 ```
-Topology: parallel implementation → review → parent synthesis
+Topology: parallel implementation → review → runtime verification → parent synthesis
 
 1. scout → understand affected code (if needed)
 2. parallel:
@@ -78,7 +111,8 @@ Topology: parallel implementation → review → parent synthesis
    - frontend-worker → implement UI changes (may depend on backend if new API)
 3. domain-reviewer → review all changes
 4. qa-worker → write tests + run validation
-5. parent → synthesize, resolve issues, final validation
+5. qa-worker → runtime verification in actual dev server
+6. parent → synthesize, resolve issues, final validation
 ```
 
 ### Frontend-only feature
@@ -88,7 +122,8 @@ Topology: parallel implementation → review → parent synthesis
 2. frontend-worker → implement
 3. domain-reviewer → review (if touches >3 files or crosses layers)
 4. qa-worker → tests + validation
-5. parent → final check
+5. qa-worker → browser verification in running app
+6. parent → final check
 ```
 
 ### Design / UX task
@@ -97,8 +132,9 @@ Topology: parallel implementation → review → parent synthesis
 1. designer → sketch/critique UX direction
 2. frontend-worker or backend-worker → implement scoped changes
 3. designer → screenshot/sketch fidelity review
-4. qa-worker → tests + validation (as needed)
-5. parent → final check
+4. qa-worker → tests + validation
+5. qa-worker → browser verification of UX changes
+6. parent → final check
 ```
 
 ### Backend-only feature
@@ -107,7 +143,8 @@ Topology: parallel implementation → review → parent synthesis
 1. backend-worker → implement
 2. domain-reviewer → review (if touches >3 files or crosses layers)
 3. qa-worker → tests + validation
-4. parent → final check
+4. qa-worker → API endpoint verification with real requests
+5. parent → final check
 ```
 
 ### Bug fix
@@ -116,7 +153,8 @@ Topology: parallel implementation → review → parent synthesis
 1. scout → locate the bug (if not obvious)
 2. backend-worker or frontend-worker → fix (pick based on layer)
 3. qa-worker → regression test + validation
-4. parent → verify fix
+4. qa-worker → verify fix works in running application
+5. parent → verify fix
 ```
 
 ### Review / audit
@@ -132,7 +170,8 @@ Topology: parallel implementation → review → parent synthesis
 1. backend-worker → implement
 2. domain-reviewer → review (always, for billing domain correctness)
 3. qa-worker → tests + browser QA (complete Stripe checkout flow, not just redirect)
-4. parent → synthesize
+4. qa-worker → actual payment flow verification in test mode
+5. parent → synthesize
 ```
 
 ## Delegation mechanics
@@ -178,7 +217,8 @@ The parent session MUST:
 4. **Synthesize** all worker outputs into one coherent result
 5. **Resolve** contradictions between workers
 6. **Validate** the final result (run commands, read files — but NEVER edit)
-7. **Report** to the user: what was delegated, what each worker did, what was validated
+7. **Verify runtime functionality** — tests passing ≠ completion. Must see evidence feature works at runtime
+8. **Report** to the user: what was delegated, what each worker did, what was validated, what was verified
 
 The parent MUST NOT:
 
@@ -186,14 +226,52 @@ The parent MUST NOT:
 - Accept worker output without review
 - Leave the user with multiple disconnected reports
 - Skip the review step for multi-file changes
+- **Report completion without runtime verification**
+
+## Quota-aware subagent handling
+
+Treat provider quota/usage-limit failures as a specific class, not a generic worker failure.
+
+Recognize these patterns in worker `error`, stdout/stderr, or output artifacts:
+- `You have hit your ChatGPT usage limit`
+- `usage limit` / `team plan`
+- `quota exceeded` / `insufficient_quota`
+- `rate limit` / HTTP `429`
+
+When detected:
+1. Mark the run as **quota-limited**.
+2. Retry once immediately with a lighter `cursor/*` model (same agent/task).
+3. If still quota-limited, retry once with non-cursor fallback (`openai/gpt-4o`), preserving prompt and scope.
+4. If all retries fail, report provider-limited status to the user with the exact failing agent and model attempts.
+
+Do not classify quota-limited runs as normal implementation failures.
+
+## Subagent model routing policy
+
+Default model preference is `cursor/*` with difficulty-based routing:
+
+- `simple` (small scoped edits, low ambiguity): `cursor/gpt-5.3-codex`
+- `moderate` (multi-file but clear): `cursor/gpt-5.3-codex`
+- `hard` (architecture, high uncertainty, cross-domain): `cursor/gpt-5.5`
+
+Fast fallback ladder (same task, same prompt):
+1. `cursor/gpt-5.3-codex`
+2. `cursor/gpt-5.5`
+3. `openai/gpt-4o`
+
+Agent defaults to use unless overridden by user:
+- `scout`, `planner`, `delegate`, `reviewer` -> `cursor/gpt-5.3-codex`
+- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer` -> `cursor/gpt-5.5`
 
 ## Escalation
 
 If a worker fails:
-1. Retry once with a narrower prompt or different context strategy
-2. If it fails again, delegate to `worker` (builtin) with the failure context included
-3. Never silently drop a failed worker's scope
-4. Never fall back to editing files yourself — always delegate
+1. First classify the failure (quota-limited vs normal failure)
+2. For quota-limited failures, follow the quota-aware retry policy above
+3. For normal failures, retry once with a narrower prompt or different context strategy
+4. If it fails again, delegate to `worker` (builtin) with the failure context included
+5. Never silently drop a failed worker's scope
+6. Never fall back to editing files yourself — always delegate
 
 ## Pre-built chains
 
@@ -214,4 +292,4 @@ subagent({
 })
 ```
 
-Then follow up with `domain-reviewer` and `qa-worker` sequentially.
+Then follow up with `domain-reviewer` and `qa-worker` sequentially, ensuring qa-worker performs both testing and runtime verification.

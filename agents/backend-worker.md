@@ -1,7 +1,7 @@
 ---
 name: backend-worker
 description: Backend/domain implementation specialist. Implements services, repositories, APIs, and infrastructure following clean architecture with SurrealDB persistence and project monorepo conventions.
-tools: Read, Grep, Glob, Shell, StrReplace, Write
+tools: read, grep, find, ls, bash, edit, write
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: false

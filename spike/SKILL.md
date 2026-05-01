@@ -1,6 +1,6 @@
 ---
 name: spike
-description: Prepare for a task by running a research spike in a delegated subagent. Use when the user wants investigation, discovery, architecture mapping, risk analysis, or implementation prep before coding. Always attribute the spike to a subagent, use no worktree, and run the subagent on openai-codex/gpt-5.5.
+description: Prepare for a task by running a research spike in a delegated subagent. Use when the user wants investigation, discovery, architecture mapping, risk analysis, or implementation prep before coding. Always attribute the spike to a subagent, use no worktree, and prefer fast cursor models with quota-aware fallback.
 ---
 
 # Spike
@@ -20,7 +20,12 @@ A spike is for:
 - **Never** do the spike entirely in the parent session.
 - **Do not** use a worktree for a spike.
 - Before execution, call `subagent({ action: "list" })` and choose an executable agent.
-- Use model **openai-codex/gpt-5.5** for the subagent.
+- Prefer model **cursor/gpt-5.3-codex** for spike runs.
+- If the task is high-ambiguity or deep architecture, use **cursor/gpt-5.5**.
+- If a run fails with quota/usage-limit (`usage limit`, `team plan`, `insufficient_quota`, `429`), retry with fallback ladder:
+  1. `cursor/gpt-5.3-codex`
+  2. `cursor/gpt-5.5`
+  3. `openai/gpt-4o`
 - A spike is investigation only. Do not implement unless the user explicitly changes scope.
 
 ## Execution pattern
@@ -31,7 +36,7 @@ Use a single delegated run with no worktree:
 subagent({
   agent: "worker",
   task: "<spike prompt>",
-  model: "openai-codex/gpt-5.5"
+  model: "cursor/gpt-5.3-codex"
 })
 ```
 
@@ -79,7 +84,7 @@ When reporting back, prefer this structure:
 ## Spike Summary
 
 **Subagent**: <agent-name>
-**Model**: openai-codex/gpt-5.5
+**Model**: <cursor/gpt-5.3-codex | cursor/gpt-5.5 | openai/gpt-4o>
 
 ### Findings
 - ...

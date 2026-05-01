@@ -1,7 +1,7 @@
 ---
 name: domain-reviewer
 description: Architecture and domain reviewer. Reviews implementations for clean architecture violations, dependency rule breaches, domain boundary leaks, i18n compliance, and billing/Stripe domain correctness.
-tools: Read, Grep, Glob, Shell
+tools: read, grep, find, ls, bash
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: false

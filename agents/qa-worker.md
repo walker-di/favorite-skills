@@ -1,7 +1,7 @@
 ---
 name: qa-worker
 description: QA and testing specialist. Plans and implements tests, runs validation, and performs browser QA. Knows the project's test stack (Vitest frontend, Jest backend, SurrealDB mem:// for repo tests, Playwright for e2e).
-tools: Read, Grep, Glob, Shell, StrReplace, Write
+tools: read, grep, find, ls, bash, edit, write
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: false
