@@ -26,12 +26,15 @@ This is a planning workflow only. Do **not** implement code unless the user late
 - Before execution, call `subagent({ action: "list" })` and choose executable no-edit-safe agents.
 - Use no-edit-safe planning agents by default: `delegate` for role-specific planning or `planner` where appropriate.
 - Avoid implementation-specialist agents (`frontend-worker`, `backend-worker`, `qa-worker`) unless their harness explicitly supports no-edit planning mode.
-- Prefer `cursor/gpt-5.3-codex` for planning subtasks to reduce latency.
-- If planning quality is insufficient, escalate to `cursor/gpt-5.5`.
-- If a subagent fails with quota/usage-limit (`usage limit`, `team plan`, `insufficient_quota`, `429`), retry with fallback ladder:
-  1. `cursor/gpt-5.3-codex`
-  2. `cursor/gpt-5.5` 
-  3. `openai/gpt-4o`
+- Prefer `cursor/claude-4.6-sonnet` or `cursor/gpt-5.4` for planning subtasks in both single-child and parallel-child workflows.
+- If planning quality is insufficient or one preferred model stalls, retry once with the other preferred model before moving to Cursor Gemini fallback models.
+- If a subagent fails with quota/usage-limit (`usage limit`, `team plan`, `insufficient_quota`, `429`), hangs (`exit 143`, long inactivity after the last tool result, or tiny partial output followed by no progress), or another provider-side model stall, retry with fallback ladder:
+  1. `cursor/claude-4.6-sonnet`
+  2. `cursor/gpt-5.4`
+  3. `cursor/gemini-2.5-pro`
+  4. `cursor/gemini-2.5-flash`
+- For parallel planning runs, prefer the two primary models above and avoid retrying all children on the same stalled model if one batch already hung.
+- Add per-child inactivity guidance: if a child shows no new activity for roughly 90-120 seconds after its last tool result, treat it as a likely model stall and retry instead of waiting for the full parent run to time out.
 - Do **not** use worktrees for this workflow.
 - Run all subagents in current repo/folder context.
 - Subagents must investigate and plan only; they must not edit files.
@@ -61,16 +64,16 @@ This is a planning workflow only. Do **not** implement code unless the user late
 
 Single subtask example:
 ```text
-subagent({ agent: "delegate", task: "<focused planning prompt>", model: "cursor/gpt-5.3-codex", output: false })
+subagent({ agent: "delegate", task: "<focused planning prompt>", model: "cursor/claude-4.6-sonnet", output: false })
 ```
 
 Primary execution (parallel, no worktree):
 ```text
 subagent({
   tasks: [
-    { agent: "delegate", task: "<ui planning prompt>", model: "cursor/gpt-5.3-codex", output: false },
-    { agent: "delegate", task: "<backend planning prompt>", model: "cursor/gpt-5.3-codex", output: false },
-    { agent: "delegate", task: "<tests planning prompt>", model: "cursor/gpt-5.3-codex", output: false }
+    { agent: "delegate", task: "<ui planning prompt>", model: "cursor/claude-4.6-sonnet", output: false },
+    { agent: "delegate", task: "<backend planning prompt>", model: "cursor/gpt-5.4", output: false },
+    { agent: "delegate", task: "<tests planning prompt>", model: "cursor/claude-4.6-sonnet", output: false }
   ],
   concurrency: 3,
   worktree: false
@@ -260,6 +263,7 @@ Say "implement this plan" when you want me to start executing the checklist.
 - Keep final response concise.
 - Do not claim implementation occurred.
 - For quota-limited failures, retry with model fallback ladder before changing prompt scope.
+- For model-stall failures (`exit 143`, long inactivity after the last tool result, or a tiny partial artifact followed by dead time), switch models before narrowing the prompt. Prefer the other primary model first, then Cursor Gemini fallback models.
 - For non-quota failures, retry once with narrower prompt. If it fails again, complete missing section in parent with failure disclosed.
 - Always validate artifact content when harness indicates "no edits" to distinguish successful planning from failed implementation.
 - Prefer concrete file paths over vague tasks in checklists.

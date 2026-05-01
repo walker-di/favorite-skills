@@ -241,7 +241,7 @@ Recognize these patterns in worker `error`, stdout/stderr, or output artifacts:
 When detected:
 1. Mark the run as **quota-limited**.
 2. Retry once immediately with a lighter `cursor/*` model (same agent/task).
-3. If still quota-limited, retry once with non-cursor fallback (`openai/gpt-4o`), preserving prompt and scope.
+3. If still quota-limited, retry with Cursor Gemini fallback models, preserving prompt and scope.
 4. If all retries fail, report provider-limited status to the user with the exact failing agent and model attempts.
 
 Do not classify quota-limited runs as normal implementation failures.
@@ -250,18 +250,19 @@ Do not classify quota-limited runs as normal implementation failures.
 
 Default model preference is `cursor/*` with difficulty-based routing:
 
-- `simple` (small scoped edits, low ambiguity): `cursor/gpt-5.3-codex`
-- `moderate` (multi-file but clear): `cursor/gpt-5.3-codex`
-- `hard` (architecture, high uncertainty, cross-domain): `cursor/gpt-5.5`
+- `simple` (small scoped edits, low ambiguity): `cursor/gpt-5.4`
+- `moderate` (multi-file but clear): `cursor/claude-4.6-sonnet` or `cursor/gpt-5.4`
+- `hard` (architecture, high uncertainty, cross-domain): `cursor/claude-4.6-sonnet`
 
 Fast fallback ladder (same task, same prompt):
-1. `cursor/gpt-5.3-codex`
-2. `cursor/gpt-5.5`
-3. `openai/gpt-4o`
+1. `cursor/claude-4.6-sonnet`
+2. `cursor/gpt-5.4`
+3. `cursor/gemini-2.5-pro`
+4. `cursor/gemini-2.5-flash`
 
 Agent defaults to use unless overridden by user:
-- `scout`, `planner`, `delegate`, `reviewer` -> `cursor/gpt-5.3-codex`
-- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer` -> `cursor/gpt-5.5`
+- `scout`, `planner`, `delegate`, `reviewer` -> `cursor/gpt-5.4` or `cursor/claude-4.6-sonnet`
+- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer` -> `cursor/claude-4.6-sonnet` or `cursor/gpt-5.4`
 
 ## Escalation
 

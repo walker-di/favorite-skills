@@ -95,18 +95,19 @@ Classify the task:
 
 Pick model by difficulty unless user overrides:
 
-- `simple`: `cursor/gpt-5.3-codex`
-- `moderate`: `cursor/gpt-5.3-codex`
-- `hard`: `cursor/gpt-5.5`
+- `simple`: `cursor/gpt-5.4`
+- `moderate`: `cursor/claude-4.6-sonnet` or `cursor/gpt-5.4`
+- `hard`: `cursor/claude-4.6-sonnet`
 
-Fallback ladder for quota/usage-limit failures (`usage limit`, `team plan`, `insufficient_quota`, `429`):
-1. `cursor/gpt-5.3-codex`
-2. `cursor/gpt-5.5`
-3. `openai/gpt-4o`
+Fallback ladder for quota/usage-limit failures (`usage limit`, `team plan`, `insufficient_quota`, `429`) or likely provider/model stalls (`exit 143`, long inactivity after the last tool result, or tiny partial output followed by dead time):
+1. `cursor/claude-4.6-sonnet`
+2. `cursor/gpt-5.4`
+3. `cursor/gemini-2.5-pro`
+4. `cursor/gemini-2.5-flash`
 
 Agent defaults:
-- `scout`, `planner`, `delegate`, `reviewer`: `cursor/gpt-5.3-codex`
-- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer`: `cursor/gpt-5.5`
+- `scout`, `planner`, `delegate`, `reviewer`: `cursor/gpt-5.4` or `cursor/claude-4.6-sonnet`
+- `frontend-worker`, `backend-worker`, `qa-worker`, `domain-reviewer`: `cursor/claude-4.6-sonnet` or `cursor/gpt-5.4`
 
 
 Call:
@@ -281,7 +282,7 @@ subagent({
     { agent: "<investigator>", task: "<prompt>", model: "<selected-model>" },
     { agent: "<planner>", task: "Use this prior report: {previous}\n\n<prompt>", model: "<selected-model>" },
     { agent: "<implementer>", task: "Use this plan: {previous}\n\n<prompt>", model: "<selected-model>" },
-    { agent: "qa-worker", task: "Verify implementation works: use-browser skill to test the feature and capture screenshots: {previous}\n\n<prompt>", model: "cursor/gpt-5.5" }
+    { agent: "qa-worker", task: "Verify implementation works: use-browser skill to test the feature and capture screenshots: {previous}\n\n<prompt>", model: "cursor/claude-4.6-sonnet" }
   ]
 })
 ```
